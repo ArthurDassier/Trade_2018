@@ -3,7 +3,6 @@ const utils = require('./utils');
 const Candle = require('./Candle');
 const Chart = require('./Chart');
 const IchimokuStrategy = require('./IchimokuStrategy');
-const HODLStrategy = require('./HODLStrategy');
 
 module.exports = class Bot {
     constructor() {
