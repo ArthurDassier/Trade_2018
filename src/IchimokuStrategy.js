@@ -31,12 +31,12 @@ module.exports = class IchimokuStrategy {
 
     setPeriods(state) {
         this.period = state.date.getTime() - this.firstDate;
-        this.periods.longPeriod = this.period * 84;
-        this.periods.middlePeriod = this.period * 42;
-        this.periods.shortPeriod = this.period * 15;
+        this.periods.longPeriod = this.period * 52;
+        this.periods.middlePeriod = this.period * 26;
+        this.periods.shortPeriod = this.period * 9;
     }
 
-    setLines(state) {
+    setLines(state, chart) {
         this.lines.short.push((this.prices.shortLow + this.prices.shortHigh) / 2);
         this.lines.middle.push((this.prices.middleLow + this.prices.middleHigh) / 2);
         this.lines.longA[state.date.getTime() + this.periods.middlePeriod] = (this.lines.short.slice(-1)[0] + this.lines.middle.slice(-1)[0]) / 2;
@@ -47,12 +47,12 @@ module.exports = class IchimokuStrategy {
         this.low.push(state.charts[chart].getCandleAt(state.date).low);
         this.high.push(state.charts[chart].getCandleAt(state.date).high);
 
-        this.prices.shortLow = Math.min(...this.low.slice(-15));
-        this.prices.middleLow = Math.min(...this.low.slice(-42));
-        this.prices.longLow = Math.min(...this.low.slice(-84));
-        this.prices.shortHigh = Math.max(...this.high.slice(-15));
-        this.prices.middleHigh = Math.max(...this.high.slice(-42));
-        this.prices.longHigh = Math.max(...this.high.slice(-84));
+        this.prices.shortLow = Math.min(...this.low.slice(-9));
+        this.prices.middleLow = Math.min(...this.low.slice(-26));
+        this.prices.longLow = Math.min(...this.low.slice(-52));
+        this.prices.shortHigh = Math.max(...this.high.slice(-9));
+        this.prices.middleHigh = Math.max(...this.high.slice(-26));
+        this.prices.longHigh = Math.max(...this.high.slice(-52));
     }
 
     process(state, chart) {
@@ -73,31 +73,41 @@ module.exports = class IchimokuStrategy {
     defineAction(state, chart, action) {
         const closePrice = state.charts[chart].getCandleAt(state.date).close;
         const date = state.date.getTime();
+        const lag = state.charts[chart].getCandleAt(new Date(date - this.periods.middlePeriod)).close;
 
         if (closePrice < this.lines.longA[date] && closePrice < this.lines.longB[date]) {
-            if (action == "buy")
+            if (action == "buy" || closePrice > lag)
                 return 'pass';
             else
-                return action;
+                return {
+                    "action" : action,
+                    "force" : 500,
+                };
         } else if ((closePrice >= this.lines.longA[date] && closePrice <= this.lines.longB[date]) ||
         (closePrice <= this.lines.longA[date] && closePrice >= this.lines.longB[date])) {
-            return action;
+            return {
+                "action" : action,
+                "force" : 200,
+            };
         } else if (closePrice > this.lines.longA[date] && closePrice > this.lines.longB[date]) {
-            if (action == "sell")
+            if (action == "sell" || closePrice < lag)
                 return 'pass';
             else
-                return action;
+                return {
+                    "action" : action,
+                    "force" : 500,
+                };
         }
         return 'pass';
     }
 
     strategy(state, chart) {
         if (this.lines.short.slice(-1)[0] > this.lines.middle.slice(-1)[0]) {
-            if (this.lines.short.slice(-5)[0] <= this.lines.middle.slice(-5)[0]) {
+            if (this.lines.short.slice(-17)[0] <= this.lines.middle.slice(-17)[0]) {
                 return this.defineAction(state, chart, "buy");
             }
         } else {
-            if (this.lines.middle.slice(-5)[0] <= this.lines.short.slice(-5)[0]) {
+            if (this.lines.middle.slice(-17)[0] <= this.lines.short.slice(-17)[0]) {
                 return this.defineAction(state, chart, "sell");
             }
         }
@@ -111,21 +121,20 @@ module.exports = class IchimokuStrategy {
         const dollars = state.stacks["USDT"];
         const eth = state.stacks["ETH"];
         const lastClosePrice = state.charts["USDT_ETH"].getCandleAt(state.date).close;
-        const strat = this.strategy(state, "USDT_ETH");        
-        let amount = 100 / lastClosePrice;
-        console.error(amount);
+        const strat = this.strategy(state, "USDT_ETH");
+        let amount = strat["force"] / lastClosePrice;
+        process.stderr.write("Short:" + this.lines.short.slice(-1) + ", middle:" + this.lines.middle.slice(-1) + "\n");
 
         if (strat == 'pass') {
             return 'pass';
         }
-        if (strat == "buy" && dollars < 100) {
+        if (strat["action"] == "buy" && dollars < strat["force"]) {
             return 'pass';
         }
-        if (strat == 'sell') {
-            if (eth == 0 || (eth * lastClosePrice) < 100)
-                return 'pass';
+        if (strat["action"] == 'sell' && eth < amount) {
+            return 'pass';
         }
-        const order = new Order(strat, 'USDT_ETH', amount);
+        const order = new Order(strat["action"], 'USDT_ETH', amount);
 
         return order.toString();
     }
