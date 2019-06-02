@@ -115,7 +115,7 @@ module.exports = class IchimokuStrategy {
     }
 
     execute(gameSettings, state) {
-        if ((state.date.getTime() - this.firstDate) / this.period < 84)
+        if ((state.date.getTime() - this.firstDate) / this.period < 52)
             return 'pass';
         // console.error(this.lines);
         const dollars = state.stacks["USDT"];
